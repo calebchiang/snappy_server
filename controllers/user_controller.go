@@ -15,9 +15,13 @@ import (
 
 func CreateUser(c *gin.Context) {
 	var input struct {
-		Name     string `json:"name"`
-		Email    string `json:"email"`
-		Password string `json:"password"`
+		Name           string `json:"name"`
+		Email          string `json:"email"`
+		Password       string `json:"password"`
+		TargetLanguage string `json:"target_language"`
+		NativeLanguage string `json:"native_language"`
+		HeardFrom      string `json:"heard_from"`
+		AgeGroup       string `json:"age_group"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -25,16 +29,13 @@ func CreateUser(c *gin.Context) {
 		return
 	}
 
-	// Basic validation
 	if input.Name == "" || input.Email == "" || input.Password == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "All fields are required"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Name, email, and password are required"})
 		return
 	}
 
-	// Normalize email
 	email := strings.ToLower(strings.TrimSpace(input.Email))
 
-	// Hash password
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(input.Password), bcrypt.DefaultCost)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to hash password"})
@@ -42,9 +43,13 @@ func CreateUser(c *gin.Context) {
 	}
 
 	user := models.User{
-		Name:     input.Name,
-		Email:    email,
-		Password: string(hashedPassword),
+		Name:           strings.TrimSpace(input.Name),
+		Email:          email,
+		Password:       string(hashedPassword),
+		TargetLanguage: input.TargetLanguage,
+		NativeLanguage: input.NativeLanguage,
+		HeardFrom:      input.HeardFrom,
+		AgeGroup:       input.AgeGroup,
 	}
 
 	if err := database.DB.Create(&user).Error; err != nil {
@@ -57,9 +62,14 @@ func CreateUser(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusCreated, gin.H{
-		"id":    user.ID,
-		"name":  user.Name,
-		"email": user.Email,
+		"id":              user.ID,
+		"name":            user.Name,
+		"email":           user.Email,
+		"credits":         user.Credits,
+		"target_language": user.TargetLanguage,
+		"native_language": user.NativeLanguage,
+		"heard_from":      user.HeardFrom,
+		"age_group":       user.AgeGroup,
 	})
 }
 
@@ -79,8 +89,10 @@ func LoginUser(c *gin.Context) {
 		return
 	}
 
+	email := strings.ToLower(strings.TrimSpace(input.Email))
+
 	var user models.User
-	if err := database.DB.Where("email = ?", input.Email).First(&user).Error; err != nil {
+	if err := database.DB.Where("email = ?", email).First(&user).Error; err != nil {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid email or password"})
 		return
 	}
@@ -115,29 +127,29 @@ func LoginUser(c *gin.Context) {
 func GetCurrentUser(c *gin.Context) {
 	userID, exists := c.Get("user_id")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Unauthorized",
-		})
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
 		return
 	}
 
 	var user models.User
 
 	if err := database.DB.
-		Select("id, name, email, credits").
+		Select("id, name, email, credits, target_language, native_language, heard_from, age_group").
 		Where("id = ?", userID.(uint)).
 		First(&user).Error; err != nil {
 
-		c.JSON(http.StatusNotFound, gin.H{
-			"error": "User not found",
-		})
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
 		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
-		"id":      user.ID,
-		"name":    user.Name,
-		"email":   user.Email,
-		"credits": user.Credits,
+		"id":              user.ID,
+		"name":            user.Name,
+		"email":           user.Email,
+		"credits":         user.Credits,
+		"target_language": user.TargetLanguage,
+		"native_language": user.NativeLanguage,
+		"heard_from":      user.HeardFrom,
+		"age_group":       user.AgeGroup,
 	})
 }

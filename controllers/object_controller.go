@@ -3,6 +3,7 @@ package controllers
 import (
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strings"
 
@@ -60,6 +61,13 @@ func IdentifyObject(c *gin.Context) {
 
 	word, err := services.IdentifyObject(c.Request.Context(), imageBytes, mimeType)
 	if err != nil {
+		log.Printf(
+			"object identification failed: mime_type=%s image_bytes=%d error=%v",
+			mimeType,
+			len(imageBytes),
+			err,
+		)
+
 		status := http.StatusBadGateway
 		message := "Failed to identify object"
 

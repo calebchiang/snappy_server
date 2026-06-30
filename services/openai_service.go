@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -68,6 +69,13 @@ func IdentifyObject(ctx context.Context, imageBytes []byte, mimeType string) (st
 		return "", ErrOpenAIAPIKeyMissing
 	}
 
+	log.Printf(
+		"openai object identification request: model=%s mime_type=%s image_bytes=%d",
+		objectIDModel,
+		mimeType,
+		len(imageBytes),
+	)
+
 	imageDataURL := fmt.Sprintf(
 		"data:%s;base64,%s",
 		mimeType,
@@ -114,6 +122,8 @@ func IdentifyObject(ctx context.Context, imageBytes []byte, mimeType string) (st
 	}
 	defer resp.Body.Close()
 
+	log.Printf("openai object identification response: status=%d", resp.StatusCode)
+
 	var output responsesResponse
 	if err := json.NewDecoder(resp.Body).Decode(&output); err != nil {
 		return "", fmt.Errorf("%w: %v", ErrOpenAIInvalidOutput, err)
@@ -121,6 +131,12 @@ func IdentifyObject(ctx context.Context, imageBytes []byte, mimeType string) (st
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if output.Error != nil && output.Error.Message != "" {
+			log.Printf(
+				"openai object identification error: type=%s message=%s",
+				output.Error.Type,
+				output.Error.Message,
+			)
+
 			return "", fmt.Errorf("%w: %s", ErrOpenAIRequestFailed, output.Error.Message)
 		}
 		return "", fmt.Errorf("%w: status %d", ErrOpenAIRequestFailed, resp.StatusCode)
@@ -128,8 +144,11 @@ func IdentifyObject(ctx context.Context, imageBytes []byte, mimeType string) (st
 
 	word := normalizeObjectWord(extractResponseText(output))
 	if word == "" {
+		log.Printf("openai object identification invalid output: output_text=%q", output.OutputText)
 		return "", ErrOpenAIInvalidOutput
 	}
+
+	log.Printf("openai object identification success: word=%s", word)
 
 	return word, nil
 }

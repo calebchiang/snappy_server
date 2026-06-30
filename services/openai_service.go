@@ -100,7 +100,7 @@ func IdentifyObject(ctx context.Context, imageBytes []byte, mimeType string) (st
 				},
 			},
 		},
-		MaxOutputTokens: 12,
+		MaxOutputTokens: 16,
 	}
 
 	body, err := json.Marshal(payload)

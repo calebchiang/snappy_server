@@ -13,9 +13,6 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-const maxWordImageBytes = 5 << 20
-const maxWordRequestBytes = maxWordImageBytes + (1 << 20)
-
 func SaveWord(c *gin.Context) {
 	userIDValue, exists := c.Get("user_id")
 	if !exists {
@@ -28,8 +25,6 @@ func SaveWord(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
 		return
 	}
-
-	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxWordRequestBytes)
 
 	text := strings.TrimSpace(c.PostForm("word"))
 	if text == "" {
@@ -53,11 +48,6 @@ func SaveWord(c *gin.Context) {
 		return
 	}
 
-	if fileHeader.Size > maxWordImageBytes {
-		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "Image file is too large"})
-		return
-	}
-
 	file, err := fileHeader.Open()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unable to read image file"})
@@ -65,14 +55,9 @@ func SaveWord(c *gin.Context) {
 	}
 	defer file.Close()
 
-	imageBytes, err := io.ReadAll(io.LimitReader(file, maxWordImageBytes+1))
+	imageBytes, err := io.ReadAll(file)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Unable to read image file"})
-		return
-	}
-
-	if len(imageBytes) > maxWordImageBytes {
-		c.JSON(http.StatusRequestEntityTooLarge, gin.H{"error": "Image file is too large"})
 		return
 	}
 

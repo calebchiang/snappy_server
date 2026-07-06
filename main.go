@@ -14,11 +14,13 @@ func main() {
 	database.Connect()
 	database.DB.AutoMigrate(
 		&models.User{},
+		&models.Word{},
 	)
 
 	r := gin.Default()
 	routes.UserRoutes(r)
 	routes.ObjectRoutes(r)
+	routes.WordRoutes(r)
 
 	r.Run()
 }

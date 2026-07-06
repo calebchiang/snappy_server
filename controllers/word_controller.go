@@ -129,6 +129,45 @@ func SaveWord(c *gin.Context) {
 	})
 }
 
+func GetWords(c *gin.Context) {
+	userIDValue, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, ok := userIDValue.(uint)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	var words []models.Word
+	if err := database.DB.
+		Where("user_id = ?", userID).
+		Order("created_at DESC").
+		Find(&words).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch words"})
+		return
+	}
+
+	response := make([]gin.H, 0, len(words))
+	for _, word := range words {
+		response = append(response, gin.H{
+			"id":         word.ID,
+			"word":       word.Text,
+			"image_key":  word.ImageKey,
+			"image_url":  word.ImageURL,
+			"created_at": word.CreatedAt,
+			"updated_at": word.UpdatedAt,
+		})
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"words": response,
+	})
+}
+
 func supportedWordImageExtension(mimeType string) (string, bool) {
 	switch strings.ToLower(mimeType) {
 	case "image/jpeg":

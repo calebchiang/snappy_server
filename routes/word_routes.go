@@ -11,6 +11,7 @@ func WordRoutes(r *gin.Engine) {
 	auth.Use(middleware.RequireAuth())
 	{
 		auth.GET("", controllers.GetWords)
+		auth.GET("/:id", controllers.GetWord)
 		auth.POST("", controllers.SaveWord)
 	}
 }

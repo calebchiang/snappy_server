@@ -5,12 +5,14 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/calebchiang/thirdparty_server/database"
 	"github.com/calebchiang/thirdparty_server/models"
 	"github.com/calebchiang/thirdparty_server/services"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 func SaveWord(c *gin.Context) {
@@ -150,6 +152,49 @@ func GetWords(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"words": response,
+	})
+}
+
+func GetWord(c *gin.Context) {
+	userIDValue, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, ok := userIDValue.(uint)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	wordID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || wordID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid word ID"})
+		return
+	}
+
+	var word models.Word
+	if err := database.DB.
+		Where("id = ? AND user_id = ?", wordID, userID).
+		First(&word).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Word not found"})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch word"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":         word.ID,
+		"user_id":    word.UserID,
+		"word":       word.Text,
+		"image_key":  word.ImageKey,
+		"image_url":  word.ImageURL,
+		"created_at": word.CreatedAt,
+		"updated_at": word.UpdatedAt,
 	})
 }
 

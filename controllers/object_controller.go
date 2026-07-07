@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/calebchiang/thirdparty_server/database"
+	"github.com/calebchiang/thirdparty_server/models"
 	"github.com/calebchiang/thirdparty_server/services"
 	"github.com/gin-gonic/gin"
 )
@@ -16,6 +18,33 @@ const maxObjectRequestBytes = maxObjectImageBytes + (1 << 20)
 
 func IdentifyObject(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxObjectRequestBytes)
+
+	userIDValue, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, ok := userIDValue.(uint)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	var user models.User
+	if err := database.DB.
+		Select("id, target_language").
+		Where("id = ?", userID).
+		First(&user).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return
+	}
+
+	targetLanguage := strings.TrimSpace(user.TargetLanguage)
+	if targetLanguage == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Target language is required"})
+		return
+	}
 
 	fileHeader, err := c.FormFile("file")
 	if err != nil {
@@ -59,10 +88,12 @@ func IdentifyObject(c *gin.Context) {
 		return
 	}
 
-	word, err := services.IdentifyObject(c.Request.Context(), imageBytes, mimeType)
+	result, err := services.IdentifyObject(c.Request.Context(), imageBytes, mimeType, targetLanguage)
 	if err != nil {
 		log.Printf(
-			"object identification failed: mime_type=%s image_bytes=%d error=%v",
+			"object identification failed: user_id=%d target_language=%s mime_type=%s image_bytes=%d error=%v",
+			userID,
+			targetLanguage,
 			mimeType,
 			len(imageBytes),
 			err,
@@ -84,7 +115,15 @@ func IdentifyObject(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"word": word})
+	c.JSON(http.StatusOK, gin.H{
+		"object_name_en":  result.ObjectNameEN,
+		"target_language": result.TargetLanguage,
+		"translated_word": result.TranslatedWord,
+		"article":         result.Article,
+		"display_word":    result.DisplayWord,
+		"confidence":      result.Confidence,
+		"word":            result.DisplayWord,
+	})
 }
 
 func isSupportedObjectImageType(mimeType string) bool {

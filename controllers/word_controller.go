@@ -32,6 +32,22 @@ func SaveWord(c *gin.Context) {
 	if text == "" {
 		text = strings.TrimSpace(c.PostForm("text"))
 	}
+	objectNameEN := strings.TrimSpace(c.PostForm("object_name_en"))
+	targetLanguage := strings.TrimSpace(c.PostForm("target_language"))
+	translatedWord := strings.TrimSpace(c.PostForm("translated_word"))
+	article := strings.TrimSpace(c.PostForm("article"))
+	displayWord := strings.TrimSpace(c.PostForm("display_word"))
+	confidence := parseOptionalFloat(c.PostForm("confidence"))
+
+	if displayWord == "" {
+		displayWord = text
+	}
+	if text == "" {
+		text = displayWord
+	}
+	if translatedWord == "" {
+		translatedWord = displayWord
+	}
 	if text == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Word is required"})
 		return
@@ -96,10 +112,16 @@ func SaveWord(c *gin.Context) {
 	}
 
 	word := models.Word{
-		UserID:   userID,
-		Text:     text,
-		ImageKey: uploadResult.Key,
-		ImageURL: uploadResult.URL,
+		UserID:         userID,
+		Text:           text,
+		ObjectNameEN:   objectNameEN,
+		TargetLanguage: targetLanguage,
+		TranslatedWord: translatedWord,
+		Article:        article,
+		DisplayWord:    displayWord,
+		Confidence:     confidence,
+		ImageKey:       uploadResult.Key,
+		ImageURL:       uploadResult.URL,
 	}
 
 	if err := database.DB.Create(&word).Error; err != nil {
@@ -107,13 +129,7 @@ func SaveWord(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"id":         word.ID,
-		"word":       word.Text,
-		"image_key":  word.ImageKey,
-		"image_url":  word.ImageURL,
-		"created_at": word.CreatedAt,
-	})
+	c.JSON(http.StatusCreated, wordResponse(word))
 }
 
 func GetWords(c *gin.Context) {
@@ -140,14 +156,7 @@ func GetWords(c *gin.Context) {
 
 	response := make([]gin.H, 0, len(words))
 	for _, word := range words {
-		response = append(response, gin.H{
-			"id":         word.ID,
-			"word":       word.Text,
-			"image_key":  word.ImageKey,
-			"image_url":  word.ImageURL,
-			"created_at": word.CreatedAt,
-			"updated_at": word.UpdatedAt,
-		})
+		response = append(response, wordResponse(word))
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -187,15 +196,7 @@ func GetWord(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"id":         word.ID,
-		"user_id":    word.UserID,
-		"word":       word.Text,
-		"image_key":  word.ImageKey,
-		"image_url":  word.ImageURL,
-		"created_at": word.CreatedAt,
-		"updated_at": word.UpdatedAt,
-	})
+	c.JSON(http.StatusOK, wordResponse(word))
 }
 
 func DeleteWord(c *gin.Context) {
@@ -269,5 +270,47 @@ func supportedWordImageExtension(mimeType string) (string, bool) {
 		return ".webp", true
 	default:
 		return "", false
+	}
+}
+
+func parseOptionalFloat(value string) float64 {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return 0
+	}
+
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0
+	}
+
+	return parsed
+}
+
+func wordResponse(word models.Word) gin.H {
+	displayWord := strings.TrimSpace(word.DisplayWord)
+	if displayWord == "" {
+		displayWord = word.Text
+	}
+
+	translatedWord := strings.TrimSpace(word.TranslatedWord)
+	if translatedWord == "" {
+		translatedWord = displayWord
+	}
+
+	return gin.H{
+		"id":              word.ID,
+		"user_id":         word.UserID,
+		"word":            word.Text,
+		"object_name_en":  word.ObjectNameEN,
+		"target_language": word.TargetLanguage,
+		"translated_word": translatedWord,
+		"article":         word.Article,
+		"display_word":    displayWord,
+		"confidence":      word.Confidence,
+		"image_key":       word.ImageKey,
+		"image_url":       word.ImageURL,
+		"created_at":      word.CreatedAt,
+		"updated_at":      word.UpdatedAt,
 	}
 }

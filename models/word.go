@@ -10,6 +10,13 @@ type Word struct {
 
 	Text string `gorm:"not null"`
 
+	ObjectNameEN   string
+	TargetLanguage string
+	TranslatedWord string
+	Article        string
+	DisplayWord    string
+	Confidence     float64
+
 	ImageKey string `gorm:"not null"`
 	ImageURL string
 

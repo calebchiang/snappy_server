@@ -19,30 +19,8 @@ const maxObjectRequestBytes = maxObjectImageBytes + (1 << 20)
 func IdentifyObject(c *gin.Context) {
 	c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxObjectRequestBytes)
 
-	userIDValue, exists := c.Get("user_id")
-	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-		return
-	}
-
-	userID, ok := userIDValue.(uint)
+	userID, targetLanguage, ok := objectRequestUserContext(c)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
-		return
-	}
-
-	var user models.User
-	if err := database.DB.
-		Select("id, target_language").
-		Where("id = ?", userID).
-		First(&user).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
-		return
-	}
-
-	targetLanguage := strings.TrimSpace(user.TargetLanguage)
-	if targetLanguage == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Target language is required"})
 		return
 	}
 
@@ -115,15 +93,61 @@ func IdentifyObject(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"object_name_en":  result.ObjectNameEN,
-		"target_language": result.TargetLanguage,
-		"translated_word": result.TranslatedWord,
-		"article":         result.Article,
-		"display_word":    result.DisplayWord,
-		"confidence":      result.Confidence,
-		"word":            result.DisplayWord,
-	})
+	c.JSON(http.StatusOK, objectTranslationResponse(result))
+}
+
+func TranslateObject(c *gin.Context) {
+	userID, targetLanguage, ok := objectRequestUserContext(c)
+	if !ok {
+		return
+	}
+
+	var input struct {
+		ObjectNameEN string `json:"object_name_en"`
+		Word         string `json:"word"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	objectNameEN := strings.TrimSpace(input.ObjectNameEN)
+	if objectNameEN == "" {
+		objectNameEN = strings.TrimSpace(input.Word)
+	}
+	if objectNameEN == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Object name is required"})
+		return
+	}
+
+	result, err := services.TranslateObject(c.Request.Context(), objectNameEN, targetLanguage)
+	if err != nil {
+		log.Printf(
+			"object translation failed: user_id=%d target_language=%s object_name_en=%s error=%v",
+			userID,
+			targetLanguage,
+			objectNameEN,
+			err,
+		)
+
+		status := http.StatusBadGateway
+		message := "Failed to translate object"
+
+		switch {
+		case errors.Is(err, services.ErrOpenAIAPIKeyMissing):
+			status = http.StatusInternalServerError
+			message = "OpenAI API key not configured"
+		case errors.Is(err, services.ErrOpenAIInvalidOutput):
+			status = http.StatusBadGateway
+			message = "Invalid object translation response"
+		}
+
+		c.JSON(status, gin.H{"error": message})
+		return
+	}
+
+	c.JSON(http.StatusOK, objectTranslationResponse(result))
 }
 
 func isSupportedObjectImageType(mimeType string) bool {
@@ -132,5 +156,48 @@ func isSupportedObjectImageType(mimeType string) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func objectRequestUserContext(c *gin.Context) (uint, string, bool) {
+	userIDValue, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return 0, "", false
+	}
+
+	userID, ok := userIDValue.(uint)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return 0, "", false
+	}
+
+	var user models.User
+	if err := database.DB.
+		Select("id, target_language").
+		Where("id = ?", userID).
+		First(&user).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+		return 0, "", false
+	}
+
+	targetLanguage := strings.TrimSpace(user.TargetLanguage)
+	if targetLanguage == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Target language is required"})
+		return 0, "", false
+	}
+
+	return userID, targetLanguage, true
+}
+
+func objectTranslationResponse(result services.ObjectTranslationResult) gin.H {
+	return gin.H{
+		"object_name_en":  result.ObjectNameEN,
+		"target_language": result.TargetLanguage,
+		"translated_word": result.TranslatedWord,
+		"article":         result.Article,
+		"display_word":    result.DisplayWord,
+		"confidence":      result.Confidence,
+		"word":            result.DisplayWord,
 	}
 }

@@ -36,6 +36,24 @@ Rules:
 - display_word should be article + translated_word when article is present, otherwise just translated_word.
 - confidence must be a number from 0 to 1.
 - Do not include markdown, explanations, or extra keys.`
+	objectTranslationPrompt = `You translate a corrected English object noun into the user's target language.
+Return only valid JSON with this exact shape:
+{
+  "object_name_en": "bottle",
+  "target_language": "Spanish",
+  "translated_word": "botella",
+  "article": "la",
+  "display_word": "la botella",
+  "confidence": 1
+}
+Rules:
+- object_name_en must be the corrected English object noun provided by the user, normalized to lowercase singular form when natural.
+- target_language must exactly match the target language provided by the user.
+- translated_word must be the object translated into the target language.
+- article should be the natural article for the translated word when the target language commonly uses articles. Use an empty string if no article is natural.
+- display_word should be article + translated_word when article is present, otherwise just translated_word.
+- confidence must be a number from 0 to 1 that reflects translation confidence.
+- Do not include markdown, explanations, or extra keys.`
 )
 
 var (
@@ -185,6 +203,102 @@ func IdentifyObject(ctx context.Context, imageBytes []byte, mimeType string, tar
 
 	log.Printf(
 		"openai object identification success: object_name_en=%s target_language=%s display_word=%s confidence=%.2f",
+		result.ObjectNameEN,
+		result.TargetLanguage,
+		result.DisplayWord,
+		result.Confidence,
+	)
+
+	return result, nil
+}
+
+func TranslateObject(ctx context.Context, objectNameEN string, targetLanguage string) (ObjectTranslationResult, error) {
+	apiKey := strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	if apiKey == "" {
+		return ObjectTranslationResult{}, ErrOpenAIAPIKeyMissing
+	}
+
+	objectNameEN = strings.TrimSpace(objectNameEN)
+	targetLanguage = strings.TrimSpace(targetLanguage)
+	if objectNameEN == "" || targetLanguage == "" {
+		return ObjectTranslationResult{}, ErrOpenAIInvalidOutput
+	}
+
+	log.Printf(
+		"openai object translation request: model=%s object_name_en=%s target_language=%s",
+		objectIDModel,
+		objectNameEN,
+		targetLanguage,
+	)
+
+	payload := responsesRequest{
+		Model:        objectIDModel,
+		Instructions: objectTranslationPrompt,
+		Input: []responsesInputMessage{
+			{
+				Role: "user",
+				Content: []responsesInputContent{
+					{
+						Type: "input_text",
+						Text: fmt.Sprintf(
+							"Translate this corrected English object noun into %s: %s",
+							targetLanguage,
+							objectNameEN,
+						),
+					},
+				},
+			},
+		},
+		MaxOutputTokens: 180,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return ObjectTranslationResult{}, fmt.Errorf("%w: %v", ErrOpenAIRequestFailed, err)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, openAIResponsesURL, bytes.NewReader(body))
+	if err != nil {
+		return ObjectTranslationResult{}, fmt.Errorf("%w: %v", ErrOpenAIRequestFailed, err)
+	}
+
+	req.Header.Set("Authorization", "Bearer "+apiKey)
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := openAIHTTPClient.Do(req)
+	if err != nil {
+		return ObjectTranslationResult{}, fmt.Errorf("%w: %v", ErrOpenAIRequestFailed, err)
+	}
+	defer resp.Body.Close()
+
+	log.Printf("openai object translation response: status=%d", resp.StatusCode)
+
+	var output responsesResponse
+	if err := json.NewDecoder(resp.Body).Decode(&output); err != nil {
+		return ObjectTranslationResult{}, fmt.Errorf("%w: %v", ErrOpenAIInvalidOutput, err)
+	}
+
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if output.Error != nil && output.Error.Message != "" {
+			log.Printf(
+				"openai object translation error: type=%s message=%s",
+				output.Error.Type,
+				output.Error.Message,
+			)
+
+			return ObjectTranslationResult{}, fmt.Errorf("%w: %s", ErrOpenAIRequestFailed, output.Error.Message)
+		}
+		return ObjectTranslationResult{}, fmt.Errorf("%w: status %d", ErrOpenAIRequestFailed, resp.StatusCode)
+	}
+
+	result, err := parseObjectTranslationResult(extractResponseText(output))
+	if err != nil {
+		log.Printf("openai object translation invalid output: output_text=%q", output.OutputText)
+		return ObjectTranslationResult{}, err
+	}
+
+	log.Printf(
+		"openai object translation success: object_name_en=%s target_language=%s display_word=%s confidence=%.2f",
 		result.ObjectNameEN,
 		result.TargetLanguage,
 		result.DisplayWord,

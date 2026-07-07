@@ -11,5 +11,6 @@ func ObjectRoutes(r *gin.Engine) {
 	auth.Use(middleware.RequireAuth())
 	{
 		auth.POST("/identify", controllers.IdentifyObject)
+		auth.POST("/translate", controllers.TranslateObject)
 	}
 }

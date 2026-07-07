@@ -57,6 +57,20 @@ func UploadWordImage(
 	}, nil
 }
 
+func DeleteWordImage(ctx context.Context, key string) error {
+	config, err := loadR2Config()
+	if err != nil {
+		return err
+	}
+
+	objectURL, err := r2ObjectURL(config.Endpoint, config.BucketName, key)
+	if err != nil {
+		return err
+	}
+
+	return deleteR2Object(ctx, config, objectURL)
+}
+
 type r2Config struct {
 	Endpoint        string
 	AccessKeyID     string
@@ -181,6 +195,75 @@ func putR2Object(
 
 	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
 	return fmt.Errorf("r2 upload failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
+}
+
+func deleteR2Object(
+	ctx context.Context,
+	config r2Config,
+	objectURL *url.URL,
+) error {
+	bodyHash := sha256Hex(nil)
+	now := time.Now().UTC()
+	amzDate := now.Format("20060102T150405Z")
+	dateStamp := now.Format("20060102")
+
+	req, err := http.NewRequestWithContext(
+		ctx,
+		http.MethodDelete,
+		objectURL.String(),
+		nil,
+	)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("X-Amz-Content-Sha256", bodyHash)
+	req.Header.Set("X-Amz-Date", amzDate)
+
+	credentialScope := dateStamp + "/auto/s3/aws4_request"
+	canonicalHeaders := "host:" + objectURL.Host + "\n" +
+		"x-amz-content-sha256:" + bodyHash + "\n" +
+		"x-amz-date:" + amzDate + "\n"
+	signedHeaders := "host;x-amz-content-sha256;x-amz-date"
+	canonicalRequest := strings.Join([]string{
+		http.MethodDelete,
+		objectURL.EscapedPath(),
+		"",
+		canonicalHeaders,
+		signedHeaders,
+		bodyHash,
+	}, "\n")
+
+	stringToSign := strings.Join([]string{
+		"AWS4-HMAC-SHA256",
+		amzDate,
+		credentialScope,
+		sha256Hex([]byte(canonicalRequest)),
+	}, "\n")
+
+	signingKey := sigV4SigningKey(config.SecretAccessKey, dateStamp, "auto", "s3")
+	signature := hex.EncodeToString(hmacSHA256(signingKey, stringToSign))
+	authorization := fmt.Sprintf(
+		"AWS4-HMAC-SHA256 Credential=%s/%s, SignedHeaders=%s, Signature=%s",
+		config.AccessKeyID,
+		credentialScope,
+		signedHeaders,
+		signature,
+	)
+	req.Header.Set("Authorization", authorization)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return nil
+	}
+
+	responseBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return fmt.Errorf("r2 delete failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
 }
 
 func r2PublicURL(config r2Config, key string, uploadURL *url.URL) string {

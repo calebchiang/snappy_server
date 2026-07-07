@@ -198,6 +198,67 @@ func GetWord(c *gin.Context) {
 	})
 }
 
+func DeleteWord(c *gin.Context) {
+	userIDValue, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, ok := userIDValue.(uint)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	wordID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || wordID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid word ID"})
+		return
+	}
+
+	var word models.Word
+	if err := database.DB.
+		Where("id = ? AND user_id = ?", wordID, userID).
+		First(&word).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Word not found"})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch word"})
+		return
+	}
+
+	if err := services.DeleteWordImage(c.Request.Context(), word.ImageKey); err != nil {
+		log.Printf(
+			"word image delete failed: user_id=%d word_id=%d image_key=%s error=%v",
+			userID,
+			word.ID,
+			word.ImageKey,
+			err,
+		)
+
+		if errors.Is(err, services.ErrR2ConfigMissing) {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "R2 storage not configured"})
+			return
+		}
+
+		c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to delete image"})
+		return
+	}
+
+	if err := database.DB.Delete(&word).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete word"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"id":      word.ID,
+		"deleted": true,
+	})
+}
+
 func supportedWordImageExtension(mimeType string) (string, bool) {
 	switch strings.ToLower(mimeType) {
 	case "image/jpeg":

@@ -16,6 +16,7 @@ type Word struct {
 	Article        string
 	DisplayWord    string
 	Confidence     float64
+	IsFavorite     bool `gorm:"not null;default:false"`
 
 	ImageKey string `gorm:"not null"`
 	ImageURL string

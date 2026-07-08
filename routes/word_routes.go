@@ -13,6 +13,7 @@ func WordRoutes(r *gin.Engine) {
 		auth.GET("", controllers.GetWords)
 		auth.GET("/:id", controllers.GetWord)
 		auth.POST("", controllers.SaveWord)
+		auth.PATCH("/:id/favorite", controllers.UpdateWordFavorite)
 		auth.DELETE("/:id", controllers.DeleteWord)
 	}
 }

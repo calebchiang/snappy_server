@@ -15,6 +15,10 @@ import (
 	"gorm.io/gorm"
 )
 
+type updateWordFavoriteRequest struct {
+	IsFavorite bool `json:"is_favorite"`
+}
+
 func SaveWord(c *gin.Context) {
 	userIDValue, exists := c.Get("user_id")
 	if !exists {
@@ -146,10 +150,19 @@ func GetWords(c *gin.Context) {
 	}
 
 	var words []models.Word
-	if err := database.DB.
-		Where("user_id = ?", userID).
-		Order("created_at DESC").
-		Find(&words).Error; err != nil {
+	query := database.DB.Where("user_id = ?", userID)
+
+	if favoriteFilter := strings.TrimSpace(c.Query("favorite")); favoriteFilter != "" {
+		isFavorite, err := strconv.ParseBool(favoriteFilter)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid favorite filter"})
+			return
+		}
+
+		query = query.Where("is_favorite = ?", isFavorite)
+	}
+
+	if err := query.Order("created_at DESC").Find(&words).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch words"})
 		return
 	}
@@ -193,6 +206,53 @@ func GetWord(c *gin.Context) {
 		}
 
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch word"})
+		return
+	}
+
+	c.JSON(http.StatusOK, wordResponse(word))
+}
+
+func UpdateWordFavorite(c *gin.Context) {
+	userIDValue, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, ok := userIDValue.(uint)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	wordID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || wordID == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid word ID"})
+		return
+	}
+
+	var request updateWordFavoriteRequest
+	if err := c.ShouldBindJSON(&request); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid favorite request"})
+		return
+	}
+
+	var word models.Word
+	if err := database.DB.
+		Where("id = ? AND user_id = ?", wordID, userID).
+		First(&word).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Word not found"})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch word"})
+		return
+	}
+
+	word.IsFavorite = request.IsFavorite
+	if err := database.DB.Save(&word).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update favorite"})
 		return
 	}
 
@@ -308,6 +368,7 @@ func wordResponse(word models.Word) gin.H {
 		"article":         word.Article,
 		"display_word":    displayWord,
 		"confidence":      word.Confidence,
+		"is_favorite":     word.IsFavorite,
 		"image_key":       word.ImageKey,
 		"image_url":       word.ImageURL,
 		"created_at":      word.CreatedAt,

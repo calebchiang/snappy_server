@@ -19,15 +19,17 @@ func TestParseObjectTranslationResult(t *testing.T) {
 				"translated_word": "manzana",
 				"article": "la",
 				"display_word": "la manzana",
+				"pronunciation_guide": "mahn-SAH-nah",
 				"confidence": 0.94
 			}`,
 			want: ObjectTranslationResult{
-				ObjectNameEN:   "apple",
-				TargetLanguage: "Spanish",
-				TranslatedWord: "manzana",
-				Article:        "la",
-				DisplayWord:    "la manzana",
-				Confidence:     0.94,
+				ObjectNameEN:       "apple",
+				TargetLanguage:     "Spanish",
+				TranslatedWord:     "manzana",
+				Article:            "la",
+				DisplayWord:        "la manzana",
+				PronunciationGuide: "mahn-SAH-nah",
+				Confidence:         0.94,
 			},
 		},
 		{
@@ -39,16 +41,18 @@ func TestParseObjectTranslationResult(t *testing.T) {
 					"translated_word": "tasse",
 					"article": "la",
 					"display_word": "la tasse",
+					"pronunciation_guide": "tahs",
 					"confidence": 0.88
 				}` +
 				"\n```",
 			want: ObjectTranslationResult{
-				ObjectNameEN:   "cup",
-				TargetLanguage: "French",
-				TranslatedWord: "tasse",
-				Article:        "la",
-				DisplayWord:    "la tasse",
-				Confidence:     0.88,
+				ObjectNameEN:       "cup",
+				TargetLanguage:     "French",
+				TranslatedWord:     "tasse",
+				Article:            "la",
+				DisplayWord:        "la tasse",
+				PronunciationGuide: "tahs",
+				Confidence:         0.88,
 			},
 		},
 		{
@@ -59,15 +63,17 @@ func TestParseObjectTranslationResult(t *testing.T) {
 				"translated_word": "本",
 				"article": "",
 				"display_word": "",
+				"pronunciation_guide": "hohn",
 				"confidence": 0.91
 			}`,
 			want: ObjectTranslationResult{
-				ObjectNameEN:   "book",
-				TargetLanguage: "Japanese",
-				TranslatedWord: "本",
-				Article:        "",
-				DisplayWord:    "本",
-				Confidence:     0.91,
+				ObjectNameEN:       "book",
+				TargetLanguage:     "Japanese",
+				TranslatedWord:     "本",
+				Article:            "",
+				DisplayWord:        "本",
+				PronunciationGuide: "hohn",
+				Confidence:         0.91,
 			},
 		},
 	}
@@ -103,6 +109,19 @@ func TestParseObjectTranslationResultInvalidOutput(t *testing.T) {
 				"translated_word": "",
 				"article": "la",
 				"display_word": "la manzana",
+				"pronunciation_guide": "mahn-SAH-nah",
+				"confidence": 0.94
+			}`,
+		},
+		{
+			name: "missing pronunciation guide",
+			input: `{
+				"object_name_en": "apple",
+				"target_language": "Spanish",
+				"translated_word": "manzana",
+				"article": "la",
+				"display_word": "la manzana",
+				"pronunciation_guide": "",
 				"confidence": 0.94
 			}`,
 		},
@@ -114,6 +133,7 @@ func TestParseObjectTranslationResultInvalidOutput(t *testing.T) {
 				"translated_word": "manzana",
 				"article": "la",
 				"display_word": "la manzana",
+				"pronunciation_guide": "mahn-SAH-nah",
 				"confidence": 1.2
 			}`,
 		},

@@ -192,12 +192,13 @@ func objectRequestUserContext(c *gin.Context) (uint, string, bool) {
 
 func objectTranslationResponse(result services.ObjectTranslationResult) gin.H {
 	return gin.H{
-		"object_name_en":  result.ObjectNameEN,
-		"target_language": result.TargetLanguage,
-		"translated_word": result.TranslatedWord,
-		"article":         result.Article,
-		"display_word":    result.DisplayWord,
-		"confidence":      result.Confidence,
-		"word":            result.DisplayWord,
+		"object_name_en":      result.ObjectNameEN,
+		"target_language":     result.TargetLanguage,
+		"translated_word":     result.TranslatedWord,
+		"article":             result.Article,
+		"display_word":        result.DisplayWord,
+		"pronunciation_guide": result.PronunciationGuide,
+		"confidence":          result.Confidence,
+		"word":                result.DisplayWord,
 	}
 }

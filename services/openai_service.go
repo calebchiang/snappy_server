@@ -26,6 +26,7 @@ Return only valid JSON with this exact shape:
   "translated_word": "manzana",
   "article": "la",
   "display_word": "la manzana",
+  "pronunciation_guide": "mahn-SAH-nah",
   "confidence": 0.94
 }
 Rules:
@@ -34,6 +35,7 @@ Rules:
 - translated_word must be the object translated into the target language.
 - article should be the natural article for the translated word when the target language commonly uses articles. Use an empty string if no article is natural.
 - display_word should be article + translated_word when article is present, otherwise just translated_word.
+- pronunciation_guide must be a simple English-readable pronunciation guide for translated_word, not IPA.
 - confidence must be a number from 0 to 1.
 - Do not include markdown, explanations, or extra keys.`
 	objectTranslationPrompt = `You translate a corrected English object noun into the user's target language.
@@ -44,6 +46,7 @@ Return only valid JSON with this exact shape:
   "translated_word": "botella",
   "article": "la",
   "display_word": "la botella",
+  "pronunciation_guide": "boh-TEH-yah",
   "confidence": 1
 }
 Rules:
@@ -52,6 +55,7 @@ Rules:
 - translated_word must be the object translated into the target language.
 - article should be the natural article for the translated word when the target language commonly uses articles. Use an empty string if no article is natural.
 - display_word should be article + translated_word when article is present, otherwise just translated_word.
+- pronunciation_guide must be a simple English-readable pronunciation guide for translated_word, not IPA.
 - confidence must be a number from 0 to 1 that reflects translation confidence.
 - Do not include markdown, explanations, or extra keys.`
 )
@@ -99,12 +103,13 @@ type responsesResponse struct {
 }
 
 type ObjectTranslationResult struct {
-	ObjectNameEN   string  `json:"object_name_en"`
-	TargetLanguage string  `json:"target_language"`
-	TranslatedWord string  `json:"translated_word"`
-	Article        string  `json:"article"`
-	DisplayWord    string  `json:"display_word"`
-	Confidence     float64 `json:"confidence"`
+	ObjectNameEN       string  `json:"object_name_en"`
+	TargetLanguage     string  `json:"target_language"`
+	TranslatedWord     string  `json:"translated_word"`
+	Article            string  `json:"article"`
+	DisplayWord        string  `json:"display_word"`
+	PronunciationGuide string  `json:"pronunciation_guide"`
+	Confidence         float64 `json:"confidence"`
 }
 
 func IdentifyObject(ctx context.Context, imageBytes []byte, mimeType string, targetLanguage string) (ObjectTranslationResult, error) {
@@ -153,7 +158,7 @@ func IdentifyObject(ctx context.Context, imageBytes []byte, mimeType string, tar
 				},
 			},
 		},
-		MaxOutputTokens: 180,
+		MaxOutputTokens: 220,
 	}
 
 	body, err := json.Marshal(payload)
@@ -249,7 +254,7 @@ func TranslateObject(ctx context.Context, objectNameEN string, targetLanguage st
 				},
 			},
 		},
-		MaxOutputTokens: 180,
+		MaxOutputTokens: 220,
 	}
 
 	body, err := json.Marshal(payload)
@@ -342,6 +347,7 @@ func parseObjectTranslationResult(value string) (ObjectTranslationResult, error)
 	result.TranslatedWord = strings.TrimSpace(result.TranslatedWord)
 	result.Article = strings.TrimSpace(result.Article)
 	result.DisplayWord = strings.TrimSpace(result.DisplayWord)
+	result.PronunciationGuide = strings.TrimSpace(result.PronunciationGuide)
 
 	if result.DisplayWord == "" && result.TranslatedWord != "" {
 		result.DisplayWord = result.TranslatedWord
@@ -354,6 +360,7 @@ func parseObjectTranslationResult(value string) (ObjectTranslationResult, error)
 		result.TargetLanguage == "" ||
 		result.TranslatedWord == "" ||
 		result.DisplayWord == "" ||
+		result.PronunciationGuide == "" ||
 		result.Confidence < 0 ||
 		result.Confidence > 1 {
 		return ObjectTranslationResult{}, ErrOpenAIInvalidOutput

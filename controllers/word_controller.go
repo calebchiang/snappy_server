@@ -41,6 +41,7 @@ func SaveWord(c *gin.Context) {
 	translatedWord := strings.TrimSpace(c.PostForm("translated_word"))
 	article := strings.TrimSpace(c.PostForm("article"))
 	displayWord := strings.TrimSpace(c.PostForm("display_word"))
+	pronunciationGuide := strings.TrimSpace(c.PostForm("pronunciation_guide"))
 	confidence := parseOptionalFloat(c.PostForm("confidence"))
 
 	if displayWord == "" {
@@ -116,16 +117,17 @@ func SaveWord(c *gin.Context) {
 	}
 
 	word := models.Word{
-		UserID:         userID,
-		Text:           text,
-		ObjectNameEN:   objectNameEN,
-		TargetLanguage: targetLanguage,
-		TranslatedWord: translatedWord,
-		Article:        article,
-		DisplayWord:    displayWord,
-		Confidence:     confidence,
-		ImageKey:       uploadResult.Key,
-		ImageURL:       uploadResult.URL,
+		UserID:             userID,
+		Text:               text,
+		ObjectNameEN:       objectNameEN,
+		TargetLanguage:     targetLanguage,
+		TranslatedWord:     translatedWord,
+		Article:            article,
+		DisplayWord:        displayWord,
+		PronunciationGuide: pronunciationGuide,
+		Confidence:         confidence,
+		ImageKey:           uploadResult.Key,
+		ImageURL:           uploadResult.URL,
 	}
 
 	if err := database.DB.Create(&word).Error; err != nil {
@@ -359,19 +361,20 @@ func wordResponse(word models.Word) gin.H {
 	}
 
 	return gin.H{
-		"id":              word.ID,
-		"user_id":         word.UserID,
-		"word":            word.Text,
-		"object_name_en":  word.ObjectNameEN,
-		"target_language": word.TargetLanguage,
-		"translated_word": translatedWord,
-		"article":         word.Article,
-		"display_word":    displayWord,
-		"confidence":      word.Confidence,
-		"is_favorite":     word.IsFavorite,
-		"image_key":       word.ImageKey,
-		"image_url":       word.ImageURL,
-		"created_at":      word.CreatedAt,
-		"updated_at":      word.UpdatedAt,
+		"id":                  word.ID,
+		"user_id":             word.UserID,
+		"word":                word.Text,
+		"object_name_en":      word.ObjectNameEN,
+		"target_language":     word.TargetLanguage,
+		"translated_word":     translatedWord,
+		"article":             word.Article,
+		"display_word":        displayWord,
+		"pronunciation_guide": word.PronunciationGuide,
+		"confidence":          word.Confidence,
+		"is_favorite":         word.IsFavorite,
+		"image_key":           word.ImageKey,
+		"image_url":           word.ImageURL,
+		"created_at":          word.CreatedAt,
+		"updated_at":          word.UpdatedAt,
 	}
 }

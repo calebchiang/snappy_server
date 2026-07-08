@@ -14,6 +14,7 @@ func UserRoutes(r *gin.Engine) {
 	auth.Use(middleware.RequireAuth())
 	{
 		auth.GET("/me", controllers.GetCurrentUser)
+		auth.PATCH("/me", controllers.UpdateCurrentUser)
 		auth.DELETE("/me", controllers.DeleteCurrentUser)
 	}
 }

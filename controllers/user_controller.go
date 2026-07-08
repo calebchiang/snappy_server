@@ -146,16 +146,70 @@ func GetCurrentUser(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"id":              user.ID,
-		"name":            user.Name,
-		"email":           user.Email,
-		"credits":         user.Credits,
-		"target_language": user.TargetLanguage,
-		"native_language": user.NativeLanguage,
-		"heard_from":      user.HeardFrom,
-		"age_group":       user.AgeGroup,
-	})
+	c.JSON(http.StatusOK, userResponse(user))
+}
+
+func UpdateCurrentUser(c *gin.Context) {
+	userIDValue, exists := c.Get("user_id")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	userID, ok := userIDValue.(uint)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Invalid user ID"})
+		return
+	}
+
+	var input struct {
+		TargetLanguage *string `json:"target_language"`
+		NativeLanguage *string `json:"native_language"`
+	}
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request body"})
+		return
+	}
+
+	updates := map[string]interface{}{}
+	if input.TargetLanguage != nil {
+		updates["target_language"] = strings.TrimSpace(*input.TargetLanguage)
+	}
+	if input.NativeLanguage != nil {
+		updates["native_language"] = strings.TrimSpace(*input.NativeLanguage)
+	}
+
+	if len(updates) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "No profile fields provided"})
+		return
+	}
+
+	var user models.User
+	if err := database.DB.Where("id = ?", userID).First(&user).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "User not found"})
+			return
+		}
+
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch user"})
+		return
+	}
+
+	if err := database.DB.Model(&user).Updates(updates).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to update user"})
+		return
+	}
+
+	if err := database.DB.
+		Select("id, name, email, credits, target_language, native_language, heard_from, age_group").
+		Where("id = ?", userID).
+		First(&user).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch updated user"})
+		return
+	}
+
+	c.JSON(http.StatusOK, userResponse(user))
 }
 
 func DeleteCurrentUser(c *gin.Context) {
@@ -231,4 +285,17 @@ func DeleteCurrentUser(c *gin.Context) {
 		"id":      userID,
 		"deleted": true,
 	})
+}
+
+func userResponse(user models.User) gin.H {
+	return gin.H{
+		"id":              user.ID,
+		"name":            user.Name,
+		"email":           user.Email,
+		"credits":         user.Credits,
+		"target_language": user.TargetLanguage,
+		"native_language": user.NativeLanguage,
+		"heard_from":      user.HeardFrom,
+		"age_group":       user.AgeGroup,
+	}
 }

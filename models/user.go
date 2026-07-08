@@ -23,6 +23,8 @@ type User struct {
 	// Age range selected during onboarding
 	AgeGroup string
 
+	PlanTier string `gorm:"not null;default:free"`
+
 	Credits int `gorm:"not null;default:1"`
 
 	CreatedAt time.Time

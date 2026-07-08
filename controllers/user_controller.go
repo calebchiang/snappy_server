@@ -54,6 +54,7 @@ func CreateUser(c *gin.Context) {
 		NativeLanguage: input.NativeLanguage,
 		HeardFrom:      input.HeardFrom,
 		AgeGroup:       input.AgeGroup,
+		PlanTier:       "free",
 	}
 
 	if err := database.DB.Create(&user).Error; err != nil {
@@ -65,16 +66,7 @@ func CreateUser(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"id":              user.ID,
-		"name":            user.Name,
-		"email":           user.Email,
-		"credits":         user.Credits,
-		"target_language": user.TargetLanguage,
-		"native_language": user.NativeLanguage,
-		"heard_from":      user.HeardFrom,
-		"age_group":       user.AgeGroup,
-	})
+	c.JSON(http.StatusCreated, userResponse(user))
 }
 
 func LoginUser(c *gin.Context) {
@@ -138,7 +130,7 @@ func GetCurrentUser(c *gin.Context) {
 	var user models.User
 
 	if err := database.DB.
-		Select("id, name, email, credits, target_language, native_language, heard_from, age_group").
+		Select("id, name, email, credits, target_language, native_language, heard_from, age_group, plan_tier").
 		Where("id = ?", userID.(uint)).
 		First(&user).Error; err != nil {
 
@@ -202,7 +194,7 @@ func UpdateCurrentUser(c *gin.Context) {
 	}
 
 	if err := database.DB.
-		Select("id, name, email, credits, target_language, native_language, heard_from, age_group").
+		Select("id, name, email, credits, target_language, native_language, heard_from, age_group, plan_tier").
 		Where("id = ?", userID).
 		First(&user).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch updated user"})
@@ -297,5 +289,15 @@ func userResponse(user models.User) gin.H {
 		"native_language": user.NativeLanguage,
 		"heard_from":      user.HeardFrom,
 		"age_group":       user.AgeGroup,
+		"plan_tier":       normalizedPlanTier(user.PlanTier),
+	}
+}
+
+func normalizedPlanTier(planTier string) string {
+	switch strings.ToLower(strings.TrimSpace(planTier)) {
+	case "pro":
+		return "pro"
+	default:
+		return "free"
 	}
 }

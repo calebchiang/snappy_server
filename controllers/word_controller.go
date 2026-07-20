@@ -2,18 +2,23 @@ package controllers
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/calebchiang/thirdparty_server/database"
 	"github.com/calebchiang/thirdparty_server/models"
 	"github.com/calebchiang/thirdparty_server/services"
 	"github.com/gin-gonic/gin"
+	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 )
+
+var pronunciationRequests singleflight.Group
 
 type updateWordFavoriteRequest struct {
 	IsFavorite bool `json:"is_favorite"`
@@ -214,6 +219,125 @@ func GetWord(c *gin.Context) {
 	c.JSON(http.StatusOK, wordResponse(word))
 }
 
+type pronunciationResponse struct {
+	WordID      uint   `json:"word_id"`
+	AudioURL    string `json:"audio_url"`
+	ContentType string `json:"content_type"`
+	CacheKey    string `json:"cache_key"`
+	Cached      bool   `json:"cached"`
+}
+
+func GetWordPronunciation(c *gin.Context) {
+	userIDValue, exists := c.Get("user_id")
+	userID, ok := userIDValue.(uint)
+	if !exists || !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		return
+	}
+
+	wordIDValue, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || wordIDValue == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid word ID"})
+		return
+	}
+	wordID := uint(wordIDValue)
+
+	var word models.Word
+	if err := database.DB.Where("id = ? AND user_id = ?", wordID, userID).First(&word).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "Word not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to fetch word"})
+		return
+	}
+
+	spokenText := strings.TrimSpace(word.DisplayWord)
+	if spokenText == "" {
+		spokenText = strings.TrimSpace(word.Text)
+	}
+	if spokenText == "" || strings.TrimSpace(word.TargetLanguage) == "" {
+		c.JSON(http.StatusUnprocessableEntity, gin.H{"error": "Pronunciation is unavailable for this word"})
+		return
+	}
+
+	settings := services.CurrentSpeechSettings()
+	signature := services.SpeechCacheSignature(spokenText, word.TargetLanguage, settings)
+	requestKey := fmt.Sprintf("%d:%d:%s", userID, wordID, signature)
+
+	value, err, _ := pronunciationRequests.Do(requestKey, func() (interface{}, error) {
+		var currentWord models.Word
+		if err := database.DB.Where("id = ? AND user_id = ?", wordID, userID).First(&currentWord).Error; err != nil {
+			return nil, err
+		}
+
+		if currentWord.PronunciationAudioSignature == signature &&
+			strings.TrimSpace(currentWord.PronunciationAudioURL) != "" {
+			return pronunciationResponse{
+				WordID: wordID, AudioURL: currentWord.PronunciationAudioURL,
+				ContentType: "audio/aac", CacheKey: signature, Cached: true,
+			}, nil
+		}
+
+		startedAt := time.Now()
+		audioBytes, err := services.GenerateSpeech(
+			c.Request.Context(), spokenText, currentWord.TargetLanguage, settings,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		upload, err := services.UploadWordPronunciation(
+			c.Request.Context(), userID, wordID, signature, audioBytes,
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		oldKey := currentWord.PronunciationAudioKey
+		updates := map[string]interface{}{
+			"pronunciation_audio_key":       upload.Key,
+			"pronunciation_audio_url":       upload.URL,
+			"pronunciation_audio_signature": signature,
+		}
+		if err := database.DB.Model(&currentWord).Updates(updates).Error; err != nil {
+			_ = services.DeleteWordPronunciation(c.Request.Context(), upload.Key)
+			return nil, err
+		}
+
+		if oldKey != "" && oldKey != upload.Key {
+			if err := services.DeleteWordPronunciation(c.Request.Context(), oldKey); err != nil {
+				log.Printf("stale pronunciation cleanup failed: user_id=%d word_id=%d error=%v", userID, wordID, err)
+			}
+		}
+
+		log.Printf(
+			"word pronunciation generated: user_id=%d word_id=%d target_language=%s bytes=%d latency_ms=%d",
+			userID, wordID, currentWord.TargetLanguage, len(audioBytes), time.Since(startedAt).Milliseconds(),
+		)
+		return pronunciationResponse{
+			WordID: wordID, AudioURL: upload.URL, ContentType: "audio/aac",
+			CacheKey: signature, Cached: false,
+		}, nil
+	})
+	if err != nil {
+		log.Printf("word pronunciation failed: user_id=%d word_id=%d error=%v", userID, wordID, err)
+		switch {
+		case errors.Is(err, gorm.ErrRecordNotFound):
+			c.JSON(http.StatusNotFound, gin.H{"error": "Word not found"})
+		case errors.Is(err, services.ErrOpenAIAPIKeyMissing), errors.Is(err, services.ErrR2ConfigMissing):
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Pronunciation service is not configured"})
+		default:
+			c.JSON(http.StatusBadGateway, gin.H{"error": "Failed to generate pronunciation"})
+		}
+		return
+	}
+
+	response := value.(pronunciationResponse)
+	log.Printf("word pronunciation success: user_id=%d word_id=%d cache_hit=%t", userID, wordID, response.Cached)
+	c.JSON(http.StatusOK, response)
+}
+
 func UpdateWordFavorite(c *gin.Context) {
 	userIDValue, exists := c.Get("user_id")
 	if !exists {
@@ -314,6 +438,13 @@ func DeleteWord(c *gin.Context) {
 	if err := database.DB.Delete(&word).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete word"})
 		return
+	}
+
+	if err := services.DeleteWordPronunciation(c.Request.Context(), word.PronunciationAudioKey); err != nil {
+		log.Printf(
+			"word pronunciation delete failed: user_id=%d word_id=%d error=%v",
+			userID, word.ID, err,
+		)
 	}
 
 	c.JSON(http.StatusOK, gin.H{

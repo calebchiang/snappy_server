@@ -58,6 +58,50 @@ func UploadWordImage(
 }
 
 func DeleteWordImage(ctx context.Context, key string) error {
+	return deleteR2Key(ctx, key)
+}
+
+func UploadWordPronunciation(
+	ctx context.Context,
+	userID uint,
+	wordID uint,
+	signature string,
+	audioBytes []byte,
+) (R2UploadResult, error) {
+	config, err := loadR2Config()
+	if err != nil {
+		return R2UploadResult{}, err
+	}
+
+	key := fmt.Sprintf(
+		"users/%d/words/%d/pronunciation/%s.aac",
+		userID,
+		wordID,
+		signature,
+	)
+	uploadURL, err := r2ObjectURL(config.Endpoint, config.BucketName, key)
+	if err != nil {
+		return R2UploadResult{}, err
+	}
+
+	if err := putR2Object(ctx, config, uploadURL, audioBytes, "audio/aac"); err != nil {
+		return R2UploadResult{}, err
+	}
+
+	return R2UploadResult{
+		Key: key,
+		URL: r2PublicURL(config, key, uploadURL),
+	}, nil
+}
+
+func DeleteWordPronunciation(ctx context.Context, key string) error {
+	if strings.TrimSpace(key) == "" {
+		return nil
+	}
+	return deleteR2Key(ctx, key)
+}
+
+func deleteR2Key(ctx context.Context, key string) error {
 	config, err := loadR2Config()
 	if err != nil {
 		return err

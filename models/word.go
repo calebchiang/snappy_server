@@ -10,14 +10,17 @@ type Word struct {
 
 	Text string `gorm:"not null"`
 
-	ObjectNameEN       string
-	TargetLanguage     string
-	TranslatedWord     string
-	Article            string
-	DisplayWord        string
-	PronunciationGuide string
-	Confidence         float64
-	IsFavorite         bool `gorm:"not null;default:false"`
+	ObjectNameEN                string
+	TargetLanguage              string
+	TranslatedWord              string
+	Article                     string
+	DisplayWord                 string
+	PronunciationGuide          string
+	PronunciationAudioKey       string
+	PronunciationAudioURL       string
+	PronunciationAudioSignature string
+	Confidence                  float64
+	IsFavorite                  bool `gorm:"not null;default:false"`
 
 	ImageKey string `gorm:"not null"`
 	ImageURL string
